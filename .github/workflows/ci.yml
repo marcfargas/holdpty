@@ -36,7 +36,7 @@ jobs:
       - run: npm run build
 
       - name: Unit + integration tests
-        run: npx vitest run src/platform.test.ts src/ring-buffer.test.ts src/protocol.test.ts src/integration.test.ts --reporter=verbose
+        run: npx vitest run src/platform.test.ts src/ring-buffer.test.ts src/protocol.test.ts src/integration.test.ts src/line-filter.test.ts --reporter=verbose
 
       - name: E2E tests
         run: npx vitest run src/e2e.test.ts --reporter=verbose

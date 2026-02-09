@@ -14,6 +14,7 @@
     "url": "https://github.com/marcfargas/holdpty.git"
   },
   "keywords": [
+    "pi-package",
     "pty",
     "terminal",
     "detach",
@@ -26,6 +27,11 @@
     "windows",
     "conpty"
   ],
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  },
   "bin": {
     "holdpty": "./dist/cli.js"
   },
@@ -48,9 +54,13 @@
     "dist/ring-buffer.js",
     "dist/ring-buffer.js.map",
     "dist/ring-buffer.d.ts",
+    "dist/line-filter.js",
+    "dist/line-filter.js.map",
+    "dist/line-filter.d.ts",
     "dist/session.js",
     "dist/session.js.map",
     "dist/session.d.ts",
+    "skills/",
     "LICENSE",
     "LICENSE-CC0",
     "README.md"
@@ -63,15 +73,20 @@
     "test:integration": "vitest run src/integration.test.ts",
     "test:e2e": "vitest run src/e2e.test.ts",
     "lint": "tsc --noEmit",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish",
     "prepublishOnly": "npm run lint && npm run build && npm run test"
   },
   "dependencies": {
     "node-pty": "^1.0.0"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
+    "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=18"

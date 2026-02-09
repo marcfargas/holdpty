@@ -19,6 +19,7 @@ import {
   type Frame,
   type HelloAckPayload,
 } from "./protocol.js";
+import { TailBuffer } from "./line-filter.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -27,6 +28,16 @@ export type ClientMode = "attach" | "view" | "logs";
 export interface ConnectOptions {
   name: string;
   mode: ClientMode;
+  /**
+   * If set, called for each DATA_OUT frame during replay instead of
+   * writing to stdout. After REPLAY_END, live data goes to stdout directly.
+   */
+  onReplayData?: (payload: Buffer) => void;
+  /**
+   * Called synchronously when REPLAY_END is received, before the connect
+   * promise resolves. Use to flush buffered replay data.
+   */
+  onReplayEnd?: () => void;
 }
 
 export interface ClientConnection {
@@ -61,6 +72,7 @@ export function connect(opts: ConnectOptions): Promise<ClientConnection> {
     const decoder = new FrameDecoder();
     let ack: HelloAckPayload | null = null;
     let resolved = false;
+    let replayDone = false;
 
     // done promise: resolves when connection ends
     let resolveDone: (code: number | null) => void;
@@ -96,20 +108,26 @@ export function connect(opts: ConnectOptions): Promise<ClientConnection> {
           }
 
           case MSG.DATA_OUT:
-            // Write data to stdout for view and logs modes.
-            // For view: write both replay (before REPLAY_END) and live data.
-            // For logs: write replay data (holder disconnects after REPLAY_END).
             // For attach: don't write here — attach sets up its own handler after connect().
             if (mode === "view" || mode === "logs") {
-              process.stdout.write(frame.payload);
+              if (!replayDone && opts.onReplayData) {
+                // During replay with a custom handler — delegate to caller
+                opts.onReplayData(frame.payload);
+              } else {
+                process.stdout.write(frame.payload);
+              }
             }
             break;
 
           case MSG.REPLAY_END:
+            // Must flip synchronously before processing any further frames
+            // in this batch (a live DATA_OUT may follow in the same chunk)
+            replayDone = true;
+            if (opts.onReplayEnd) {
+              opts.onReplayEnd();
+            }
             if (!resolved && ack) {
               resolved = true;
-              // For logs mode, data was already written during replay
-              // Resolve the connect promise
               resolve({ socket, ack, done });
             }
             break;
@@ -147,8 +165,8 @@ export function connect(opts: ConnectOptions): Promise<ClientConnection> {
 
 // ── Attach ─────────────────────────────────────────────────────────
 
-/** Default detach sequence: Ctrl+] then d */
-const DEFAULT_DETACH_SEQ = [0x1d, 0x64]; // Ctrl+] = 0x1d, d = 0x64
+/** Default detach sequence: Ctrl+A then d (screen convention) */
+const DEFAULT_DETACH_SEQ = [0x01, 0x64]; // Ctrl+A = 0x01, d = 0x64
 
 /**
  * Parse the HOLDPTY_DETACH env var into a byte sequence.
@@ -214,52 +232,68 @@ export async function attach(opts: AttachOptions): Promise<number | null> {
   process.stdin.setRawMode(true);
   process.stdin.resume();
 
-  // Detach sequence detection
+  // Detach sequence detection (screen-style: no timeout)
+  //
+  // The prefix byte (Ctrl+A by default) enters "command mode".
+  // The next byte decides: if it completes the sequence → detach.
+  // If anything else → flush the prefix + the byte to the PTY.
+  // To send a literal prefix byte, press it twice (Ctrl+A Ctrl+A).
   const detachSeq = parseDetachSequence();
   let detachIdx = 0;
-  const DETACH_TIMEOUT = 200; // ms
-  let detachTimer: ReturnType<typeof setTimeout> | null = null;
-  let pendingBytes: number[] = [];
-
-  const flushPending = (): void => {
-    if (pendingBytes.length > 0) {
-      socket.write(encodeDataIn(Buffer.from(pendingBytes)));
-      pendingBytes = [];
-    }
-    detachIdx = 0;
-    if (detachTimer) {
-      clearTimeout(detachTimer);
-      detachTimer = null;
-    }
-  };
 
   const onStdinData = (data: Buffer): void => {
-    for (const byte of data) {
-      if (byte === detachSeq[detachIdx]) {
-        pendingBytes.push(byte);
+    // Fast path: not in command mode and prefix byte not in this chunk
+    if (detachIdx === 0 && !data.includes(detachSeq[0])) {
+      socket.write(encodeDataIn(data));
+      return;
+    }
+
+    // Slow path: byte-by-byte scan for detach sequence
+    let batchStart = -1; // start of a run of normal bytes to batch-send
+
+    const flushBatch = (end: number): void => {
+      if (batchStart >= 0 && end > batchStart) {
+        socket.write(encodeDataIn(data.subarray(batchStart, end)));
+        batchStart = -1;
+      }
+    };
+
+    for (let i = 0; i < data.length; i++) {
+      const byte = data[i];
+
+      if (detachIdx > 0 && byte === detachSeq[detachIdx]) {
+        // Continuing the sequence
+        flushBatch(i);
         detachIdx++;
         if (detachIdx === detachSeq.length) {
-          // Full detach sequence detected
           detached = true;
           cleanup();
           return;
         }
-        // Set/reset timeout for the intermediate bytes
-        if (detachTimer) clearTimeout(detachTimer);
-        detachTimer = setTimeout(flushPending, DETACH_TIMEOUT);
-      } else {
-        // Not part of the sequence — flush any pending bytes + this one
-        pendingBytes.push(byte);
-        const toSend = Buffer.from(pendingBytes);
-        pendingBytes = [];
-        detachIdx = 0;
-        if (detachTimer) {
-          clearTimeout(detachTimer);
-          detachTimer = null;
+      } else if (detachIdx === 0 && byte === detachSeq[0]) {
+        // Prefix byte — enter command mode, swallow it
+        flushBatch(i);
+        detachIdx = 1;
+      } else if (detachIdx > 0) {
+        // In command mode but wrong byte — flush prefix + resume normal
+        flushBatch(i);
+        if (detachIdx === 1 && byte === detachSeq[0]) {
+          // Double prefix (e.g., Ctrl+A Ctrl+A) → send one literal prefix
+          socket.write(encodeDataIn(Buffer.from([detachSeq[0]])));
+        } else {
+          // Send the swallowed prefix bytes + this byte
+          const flushed = Buffer.from([...detachSeq.slice(0, detachIdx), byte]);
+          socket.write(encodeDataIn(flushed));
         }
-        socket.write(encodeDataIn(toSend));
+        detachIdx = 0;
+      } else {
+        // Normal byte — batch it
+        if (batchStart < 0) batchStart = i;
       }
     }
+
+    // Flush any trailing normal bytes
+    flushBatch(data.length);
   };
 
   // Send resize on terminal size change
@@ -278,7 +312,6 @@ export async function attach(opts: AttachOptions): Promise<number | null> {
   const cleanup = (): void => {
     process.stdin.removeListener("data", onStdinData);
     process.stdout.removeListener("resize", onResize);
-    if (detachTimer) clearTimeout(detachTimer);
     try {
       process.stdin.setRawMode(false);
       process.stdin.pause();
@@ -320,13 +353,57 @@ export async function view(opts: ViewOptions): Promise<void> {
 
 export interface LogsOptions {
   name: string;
+  /** Show only the last N lines of replay. */
+  tail?: number;
+  /** Keep streaming live data after replay (like tail -f). */
+  follow?: boolean;
+  /** Skip replay entirely. Only valid with --follow. */
+  noReplay?: boolean;
 }
 
 /**
  * Dump the session's output buffer to stdout and exit.
+ * With --follow, keeps streaming live data after replay.
+ * With --tail N, only shows the last N lines of replay.
+ * With --no-replay, skips buffer replay (only valid with --follow).
  */
 export async function logs(opts: LogsOptions): Promise<void> {
-  // connect() in logs mode writes data to stdout during handshake
-  // and the holder disconnects after REPLAY_END
-  await connect({ name: opts.name, mode: "logs" });
+  const { tail, follow, noReplay } = opts;
+
+  // --follow uses "view" mode (holder keeps connection open after REPLAY_END)
+  // Without --follow, use "logs" mode (holder disconnects after REPLAY_END)
+  const mode: ClientMode = follow ? "view" : "logs";
+
+  // Build replay callbacks based on options
+  let onReplayData: ((payload: Buffer) => void) | undefined;
+  let onReplayEnd: (() => void) | undefined;
+
+  if (noReplay) {
+    // Skip all replay data
+    onReplayData = () => {};
+  } else if (tail != null) {
+    // Buffer replay, flush last N lines on REPLAY_END
+    const tailBuf = new TailBuffer();
+    onReplayData = (payload: Buffer) => tailBuf.push(payload);
+    onReplayEnd = () => {
+      const data = tailBuf.flush(tail);
+      if (data.length > 0) {
+        process.stdout.write(data);
+      }
+    };
+  }
+  // else: default behavior — write replay data directly to stdout
+
+  const conn = await connect({
+    name: opts.name,
+    mode,
+    onReplayData,
+    onReplayEnd,
+  });
+
+  if (follow) {
+    // Wait for session to end (live streaming handled by connect's DATA_OUT handler)
+    await conn.done;
+  }
+  // Without --follow in logs mode, holder disconnects after REPLAY_END
 }

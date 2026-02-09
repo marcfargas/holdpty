@@ -1,8 +1,8 @@
 # holdpty
 
-Minimal cross-platform detached PTY. Launch commands in a real pseudo-terminal, attach/view/record later.
+Minimal cross-platform detached PTY — a pseudo-terminal that makes programs think they're running in a real terminal. Launch commands, attach/view/record later.
 
-> **Status**: Pre-release — design complete, implementation in progress.
+> **Status**: Beta — fully functional on Windows and Linux. CLI flags may evolve before 1.0.
 
 ## Why
 
@@ -28,11 +28,11 @@ npm install -g holdpty
 
 ### Prerequisites
 
-holdpty uses [node-pty](https://github.com/microsoft/node-pty) for cross-platform PTY support. On most systems, prebuilt binaries are included. If not:
-
-- **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload)
-- **Linux**: `build-essential`, `python3`
-- **macOS**: Xcode Command Line Tools
+- **Node.js 18+** and npm
+- holdpty uses [node-pty](https://github.com/microsoft/node-pty) for cross-platform PTY support. On most systems, prebuilt binaries are included. If not:
+  - **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (C++ workload)
+  - **Linux**: `build-essential`, `python3`
+  - **macOS**: Xcode Command Line Tools
 
 ## Quick Start
 
@@ -43,7 +43,7 @@ holdpty launch --bg --name worker1 -- node server.js
 # List running sessions
 holdpty ls
 
-# Attach interactively (Ctrl+] then d to detach)
+# Attach interactively (Ctrl+A then d to detach)
 holdpty attach worker1
 
 # Watch from another terminal (read-only, multiple viewers allowed)
@@ -64,7 +64,7 @@ holdpty stop worker1
 | `launch --fg` | Start session in foreground (blocks until child exits) | Nothing |
 | `attach <session>` | Interactive connection (single-writer) | Terminal takeover |
 | `view <session>` | Read-only live stream (multiple viewers) | PTY data only |
-| `logs <session>` | Dump output buffer to stdout, exit | PTY data only |
+| `logs <session>` | Dump output buffer to stdout, exit (supports `--tail`, `--follow`, `--no-replay`) | PTY data only |
 | `ls [--json]` | List active sessions (auto-cleans stale) | Session list |
 | `stop <session>` | Send SIGTERM to child process | Confirmation (stderr) |
 | `info <session>` | Show session metadata | JSON |
@@ -81,12 +81,20 @@ holdpty launch --bg -- npm start
 # Prints: npm-a3f2
 ```
 
+The `--` separator before the command is optional. This is important for **PowerShell**, which strips `--` before it reaches the process:
+
+```powershell
+# Both work:
+holdpty launch --bg --name worker1 -- node server.js
+holdpty launch --bg --name worker1 node server.js
+```
+
 ### Attach & Detach
 
 ```bash
 holdpty attach worker1
 # You're now in the session. Your keystrokes go to the PTY.
-# Detach: Ctrl+] then d
+# Detach: Ctrl+A then d
 # The session keeps running after detach.
 ```
 
@@ -106,23 +114,36 @@ holdpty view worker1
 # Your terminal renders it — like watching over someone's shoulder
 ```
 
-### Logs (for scripting)
+### Logs (for scripting and agents)
 
 ```bash
-# Dump the ring buffer contents and exit (no live tailing)
+# Dump the ring buffer contents and exit
 holdpty logs worker1
 
+# Last 50 lines only
+holdpty logs worker1 --tail 50
+
+# Follow: replay buffer + keep streaming live output (like tail -f)
+holdpty logs worker1 --follow
+holdpty logs worker1 -f --tail 50
+
+# Live output only, skip buffer replay
+holdpty logs worker1 -f --no-replay
+
 # Pipe-friendly
-holdpty logs worker1 | grep ERROR
+holdpty logs worker1 --tail 20 | grep ERROR
 ```
 
 ## Detach Keybinding
 
-Default: **`Ctrl+]`** then **`d`** (the telnet escape sequence — works on all keyboard layouts and platforms).
+Default: **`Ctrl+A`** then **`d`** (same as GNU screen). Works on all keyboard layouts.
 
-Configurable via environment variable:
+Press Ctrl+A twice to send a literal Ctrl+A to the process.
+
+Configurable via `HOLDPTY_DETACH` — comma-separated hex bytes (Ctrl+A = `0x01`, Ctrl+B = `0x02`, d = `0x64`):
 ```bash
-export HOLDPTY_DETACH="0x01,d"  # Ctrl+A then d (screen-style)
+export HOLDPTY_DETACH="0x02,0x64"  # Ctrl+B then d (tmux-style)
+export HOLDPTY_DETACH="0x1d,0x64"  # Ctrl+] then d (telnet-style)
 ```
 
 ## Session Directory
@@ -173,6 +194,11 @@ Sessions are regular processes — they don't daemonize themselves. Use `--bg` f
 | Windows 10+ | ConPTY | ✅ Primary |
 | Linux | forkpty | ✅ Supported |
 | macOS | forkpty | ✅ Supported |
+
+## Contributing & Support
+
+- **Bugs & feature requests**: [GitHub Issues](https://github.com/marcfargas/holdpty/issues)
+- **Source code**: [github.com/marcfargas/holdpty](https://github.com/marcfargas/holdpty)
 
 ## License
 

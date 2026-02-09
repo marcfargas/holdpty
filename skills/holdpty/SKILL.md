@@ -40,7 +40,7 @@ holdpty launch --fg --name build -- make all
 SESSION=$(holdpty launch --bg -- node server.js)
 ```
 
-**Windows note**: Use `node.exe` not `node` when launching Node.js commands directly (node-pty doesn't search PATH the same way).
+**`--` is optional.** PowerShell strips `--` before it reaches the process, so `holdpty launch --bg node server.js` works the same as `holdpty launch --bg -- node server.js`.
 
 **Windows `.cmd` wrappers do NOT work.** npm-installed CLIs on Windows use `.cmd` shims (e.g. `pi.cmd`, `tsc.cmd`). holdpty (via node-pty) cannot execute these — the holder will fail to start. Always resolve to the actual `.js` entry point:
 
@@ -48,8 +48,8 @@ SESSION=$(holdpty launch --bg -- node server.js)
 # ❌ WRONG — pi resolves to pi.cmd, holder fails
 holdpty launch --bg --name agent -- pi -p "prompt"
 
-# ✅ CORRECT — use node.exe with the actual cli.js
-holdpty launch --bg --name agent -- node.exe "C:\path\to\cli.js" -p "prompt"
+# ✅ CORRECT — use node with the actual cli.js
+holdpty launch --bg --name agent -- node "C:\path\to\cli.js" -p "prompt"
 
 # Find the real path behind a .cmd shim:
 cat "$(which pi)" | head -5   # look for the .js path
@@ -68,7 +68,7 @@ Stale sessions (crashed holders) are auto-detected and cleaned on every `ls`.
 
 ```bash
 holdpty attach worker1
-# Detach: Ctrl+] then d
+# Detach: Ctrl+A then d
 # Session keeps running after detach
 ```
 
@@ -82,13 +82,15 @@ holdpty view worker1
 
 Outputs real PTY data (escape sequences, TUI, colors) to stdout. Includes both buffer replay (history) and live stream. Multiple viewers allowed simultaneously.
 
-### Logs (dump buffer, exit)
+### Logs (dump buffer, exit — or follow live)
 
 ```bash
-holdpty logs worker1
+holdpty logs worker1                    # full buffer, exit
+holdpty logs worker1 --tail 50          # last 50 lines, exit
+holdpty logs worker1 -f                 # full buffer + live stream
+holdpty logs worker1 -f --tail 50       # last 50 lines + live stream (tail -f)
+holdpty logs worker1 -f --no-replay     # live output only, skip history
 ```
-
-Dumps the 1MB ring buffer (recent output history) to stdout and exits immediately. No live tailing.
 
 ### Stop a session
 
@@ -137,7 +139,7 @@ This matters for scripting and agent use:
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `HOLDPTY_DIR` | Session metadata directory | `%TEMP%\dt\` (Win) / `$XDG_RUNTIME_DIR/dt/` (Linux) |
-| `HOLDPTY_DETACH` | Custom detach sequence (hex) | `0x1d,0x64` (Ctrl+] then d) |
+| `HOLDPTY_DETACH` | Custom detach sequence (hex) | `0x01,0x64` (Ctrl+A then d) |
 | `HOLDPTY_LINGER_MS` | Shutdown linger time in ms | `5000` |
 
 ## Platform Details
