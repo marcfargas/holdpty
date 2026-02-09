@@ -42,6 +42,19 @@ SESSION=$(holdpty launch --bg -- node server.js)
 
 **Windows note**: Use `node.exe` not `node` when launching Node.js commands directly (node-pty doesn't search PATH the same way).
 
+**Windows `.cmd` wrappers do NOT work.** npm-installed CLIs on Windows use `.cmd` shims (e.g. `pi.cmd`, `tsc.cmd`). holdpty (via node-pty) cannot execute these — the holder will fail to start. Always resolve to the actual `.js` entry point:
+
+```bash
+# ❌ WRONG — pi resolves to pi.cmd, holder fails
+holdpty launch --bg --name agent -- pi -p "prompt"
+
+# ✅ CORRECT — use node.exe with the actual cli.js
+holdpty launch --bg --name agent -- node.exe "C:\path\to\cli.js" -p "prompt"
+
+# Find the real path behind a .cmd shim:
+cat "$(which pi)" | head -5   # look for the .js path
+```
+
 ### List sessions
 
 ```bash
