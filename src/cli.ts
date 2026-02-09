@@ -24,10 +24,10 @@ function usage(): string {
   return `holdpty v${VERSION} — Minimal cross-platform detached PTY
 
 Usage:
-  holdpty launch --bg|--fg [--name <name>] -- <command> [args...]
+  holdpty launch --bg|--fg [--name <name>] [--] <command> [args...]
   holdpty attach <session>
   holdpty view <session>
-  holdpty logs <session>
+  holdpty logs <session> [--tail N] [--follow] [--no-replay]
   holdpty ls [--json]
   holdpty stop <session>
   holdpty info <session>
@@ -58,17 +58,23 @@ async function cmdLaunch(args: string[]): Promise<void> {
     } else if (arg === "--") {
       cmdStart = i + 1;
       break;
-    } else {
+    } else if (arg.startsWith("-")) {
       die(`Unknown launch option: ${arg}`);
+    } else {
+      // Non-flag argument: treat as command start (-- is optional).
+      // PowerShell strips bare `--` before it reaches process.argv,
+      // so we must support: holdpty launch --bg sleep 30
+      cmdStart = i;
+      break;
     }
   }
 
   if (!fg && !bg) die("launch requires --fg or --bg");
   if (fg && bg) die("launch cannot use both --fg and --bg");
-  if (cmdStart < 0 || cmdStart >= args.length) die("launch requires -- <command>");
+  if (cmdStart < 0 || cmdStart >= args.length) die("launch requires a command after the flags");
 
   const command = args.slice(cmdStart);
-  if (command.length === 0) die("launch requires a command after --");
+  if (command.length === 0) die("launch requires a command");
 
   if (bg) {
     // Spawn the holder as a detached child process.
@@ -172,9 +178,34 @@ async function cmdView(args: string[]): Promise<void> {
 }
 
 async function cmdLogs(args: string[]): Promise<void> {
-  const name = args[0];
+  let name: string | undefined;
+  let tail: number | undefined;
+  let follow = false;
+  let noReplay = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--tail" || arg === "-n") {
+      const val = args[++i];
+      if (val === undefined) die("--tail requires a number");
+      tail = parseInt(val, 10);
+      if (isNaN(tail) || tail < 1) die("--tail requires a positive integer");
+    } else if (arg === "--follow" || arg === "-f") {
+      follow = true;
+    } else if (arg === "--no-replay") {
+      noReplay = true;
+    } else if (!arg.startsWith("-")) {
+      name = arg;
+    } else {
+      die(`Unknown logs option: ${arg}`);
+    }
+  }
+
   if (!name) die("logs requires a session name");
-  await logs({ name });
+  if (noReplay && !follow) die("--no-replay requires --follow");
+  if (noReplay && tail != null) die("--no-replay and --tail are mutually exclusive");
+
+  await logs({ name, tail, follow, noReplay });
 }
 
 async function cmdLs(args: string[]): Promise<void> {

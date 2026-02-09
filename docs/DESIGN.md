@@ -112,12 +112,14 @@ The tool never daemonizes itself. `--bg` is a convenience for Windows (where `&`
 
 ### Detach Keybinding
 
-Default: `Ctrl+]` then `d` (byte `0x1d` followed by byte `0x64`).
+Default: `Ctrl+A` then `d` (bytes `0x01, 0x64`) — same as GNU screen.
 
-The attach client runs in raw mode. All bytes are forwarded to the PTY EXCEPT the detach sequence. When `0x1d` is received, the client waits briefly for the next byte:
+Works on all keyboard layouts, including those where `]` or `\` require a modifier (e.g., Spanish, German).
+
+The attach client runs in raw mode. All bytes are forwarded to the PTY EXCEPT the detach sequence. When `0x01` is received, the client waits briefly for the next byte:
 - If `d` → detach (close connection cleanly, holder keeps running)
 - If anything else → forward both bytes to the PTY
-- If timeout (200ms) → forward `0x1d` to the PTY
+- If timeout (200ms) → forward `0x01` to the PTY
 
 Configurable via `HOLDPTY_DETACH` env var (format: comma-separated hex bytes, e.g., `0x01,0x64` for Ctrl+A then d).
 

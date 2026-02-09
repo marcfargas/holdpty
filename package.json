@@ -14,6 +14,7 @@
     "url": "https://github.com/marcfargas/holdpty.git"
   },
   "keywords": [
+    "pi-package",
     "pty",
     "terminal",
     "detach",
@@ -26,6 +27,9 @@
     "windows",
     "conpty"
   ],
+  "pi": {
+    "skills": ["./skills"]
+  },
   "bin": {
     "holdpty": "./dist/cli.js"
   },
@@ -48,9 +52,13 @@
     "dist/ring-buffer.js",
     "dist/ring-buffer.js.map",
     "dist/ring-buffer.d.ts",
+    "dist/line-filter.js",
+    "dist/line-filter.js.map",
+    "dist/line-filter.d.ts",
     "dist/session.js",
     "dist/session.js.map",
     "dist/session.d.ts",
+    "skills/",
     "LICENSE",
     "LICENSE-CC0",
     "README.md"

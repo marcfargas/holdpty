@@ -27,6 +27,7 @@ import {
   socketPath,
   metadataPath,
   isWindows,
+  resolveCommand,
 } from "./platform.js";
 import {
   writeMetadata,
@@ -105,7 +106,9 @@ export class Holder {
     const rows = opts.rows ?? 40;
 
     // Spawn PTY
-    const shell = opts.command[0];
+    // On Windows, node-pty doesn't search PATH like cmd.exe does.
+    // resolveCommand() finds the .exe so `node` works, not just `node.exe`.
+    const shell = resolveCommand(opts.command[0]);
     const args = opts.command.slice(1);
     const ptyProcess = pty.spawn(shell, args, {
       name: "xterm-256color",

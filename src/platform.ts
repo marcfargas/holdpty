@@ -12,10 +12,10 @@
  * Override metadata dir via HOLDPTY_DIR environment variable.
  */
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, extname, dirname, isAbsolute } from "node:path";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -93,3 +93,43 @@ export function defaultShell(): string {
  * Whether the current platform is Windows.
  */
 export const isWindows = IS_WINDOWS;
+
+/**
+ * Resolve a command name to a full path on Windows.
+ *
+ * node-pty on Windows doesn't search PATH the way cmd.exe does.
+ * `pty.spawn("node", ...)` fails — needs `pty.spawn("node.exe", ...)` or
+ * a full path. This function tries PATHEXT extensions and PATH directories.
+ *
+ * On non-Windows, returns the command unchanged (forkpty handles it).
+ */
+export function resolveCommand(command: string): string {
+  if (!IS_WINDOWS) return command;
+
+  // Already has an extension or is an absolute path that exists
+  if (extname(command) !== "") return command;
+
+  // PATHEXT extensions to try (e.g. .exe, .cmd, .bat)
+  // We only want real executables, not .cmd/.bat (node-pty can't run those)
+  const exeExtensions = [".exe", ".com"];
+
+  // Check if it's a relative/absolute path (contains separator)
+  if (command.includes("/") || command.includes("\\")) {
+    for (const ext of exeExtensions) {
+      if (existsSync(command + ext)) return command + ext;
+    }
+    return command;
+  }
+
+  // Search PATH
+  const pathDirs = (process.env["PATH"] ?? "").split(";").filter(Boolean);
+  for (const dir of pathDirs) {
+    for (const ext of exeExtensions) {
+      const candidate = join(dir, command + ext);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+
+  // Fallback: try just appending .exe (let node-pty give the error)
+  return command + ".exe";
+}
