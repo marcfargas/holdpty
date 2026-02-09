@@ -13,6 +13,7 @@
  */
 
 import { mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -63,7 +64,10 @@ export function resolveSessionDir(): string {
  */
 export function socketPath(sessionDir: string, name: string): string {
   if (IS_WINDOWS) {
-    return `//./pipe/holdpty-${name}`;
+    // Named pipes are system-global. Hash the session dir to namespace them,
+    // so different HOLDPTY_DIR values get isolated pipe names.
+    const dirHash = createHash("md5").update(sessionDir).digest("hex").slice(0, 8);
+    return `//./pipe/holdpty-${dirHash}-${name}`;
   }
   return join(sessionDir, `${name}.sock`);
 }

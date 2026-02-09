@@ -29,10 +29,18 @@ describe("platform", () => {
     it("returns correct path for platform", () => {
       const p = socketPath("/tmp/dt", "worker1");
       if (isWindows) {
-        expect(p).toBe("//./pipe/holdpty-worker1");
+        // Named pipe includes hash of session dir for isolation
+        expect(p).toMatch(/^\/\/\.\/pipe\/holdpty-[a-f0-9]{8}-worker1$/);
       } else {
         expect(p).toBe(join("/tmp/dt", "worker1.sock"));
       }
+    });
+
+    it("different session dirs produce different pipe names on Windows", () => {
+      if (!isWindows) return;
+      const p1 = socketPath("/tmp/dt-a", "test");
+      const p2 = socketPath("/tmp/dt-b", "test");
+      expect(p1).not.toBe(p2);
     });
   });
 

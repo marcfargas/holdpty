@@ -218,11 +218,21 @@ async function cmdStop(args: string[]): Promise<void> {
   }
 
   try {
+    // Kill the child process first (triggers holder's onExit → graceful shutdown)
     process.kill(meta.childPid, "SIGTERM");
-    process.stderr.write(`Sent SIGTERM to session "${name}" (PID ${meta.childPid})\n`);
-  } catch (err) {
-    die(`Failed to stop session "${name}": ${(err as Error).message}`);
+  } catch {
+    // Child may already be dead — try killing the holder directly
   }
+
+  try {
+    // Also kill the holder process to ensure cleanup on Windows
+    // (where SIGTERM is TerminateProcess and may not propagate to the holder)
+    process.kill(meta.pid, "SIGTERM");
+  } catch {
+    // Holder may already be dead
+  }
+
+  process.stderr.write(`Stopped session "${name}" (PID ${meta.childPid})\n`);
 }
 
 async function cmdInfo(args: string[]): Promise<void> {

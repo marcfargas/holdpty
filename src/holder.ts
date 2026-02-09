@@ -66,6 +66,8 @@ export class Holder {
   private childExitCode: number | null = null;
   private childExited = false;
   private shuttingDown = false;
+  private resolveShutdown!: () => void;
+  private readonly shutdownDone: Promise<void>;
 
   private constructor(
     name: string,
@@ -78,6 +80,9 @@ export class Holder {
     this.ringBuffer = new RingBuffer(DEFAULT_CAPACITY);
     this.ptyProcess = ptyProcess;
     this.server = server;
+    this.shutdownDone = new Promise<void>((resolve) => {
+      this.resolveShutdown = resolve;
+    });
   }
 
   /**
@@ -117,7 +122,15 @@ export class Holder {
     // Wire up PTY events
     holder.setupPty();
 
-    // Write metadata
+    // Start listening BEFORE writing metadata.
+    // Metadata signals "session exists" — it must only appear when the
+    // socket is actually connectable (avoids TOCTOU).
+    await holder.listen(sockPath);
+
+    // Wire up server events
+    holder.setupServer();
+
+    // Now write metadata — the session is fully ready
     const meta: SessionMetadata = {
       name,
       pid: process.pid,
@@ -128,12 +141,6 @@ export class Holder {
       startedAt: new Date().toISOString(),
     };
     writeMetadata(meta);
-
-    // Start listening
-    await holder.listen(sockPath);
-
-    // Wire up server events
-    holder.setupServer();
 
     return holder;
   }
@@ -149,26 +156,9 @@ export class Holder {
    * Wait for the holder to shut down (child exit + cleanup).
    * Returns the child's exit code.
    */
-  waitForExit(): Promise<number> {
-    return new Promise((resolve) => {
-      if (this.childExited) {
-        resolve(this.childExitCode ?? -1);
-        return;
-      }
-      const check = setInterval(() => {
-        if (this.shuttingDown === false && this.childExited) {
-          // shuttingDown goes false after cleanup completes
-          clearInterval(check);
-          resolve(this.childExitCode ?? -1);
-        }
-      }, 50);
-
-      // Also listen for the server close
-      this.server.once("close", () => {
-        clearInterval(check);
-        resolve(this.childExitCode ?? -1);
-      });
-    });
+  async waitForExit(): Promise<number> {
+    await this.shutdownDone;
+    return this.childExitCode ?? -1;
   }
 
   // ── PTY wiring ─────────────────────────────────────────────────
@@ -396,7 +386,8 @@ export class Holder {
       }
     }
 
-    // Linger for late connections (5s per DESIGN.md)
+    // Linger for late connections (default 5s per DESIGN.md, configurable for tests)
+    const lingerMs = parseInt(process.env["HOLDPTY_LINGER_MS"] ?? "5000", 10) || 5000;
     setTimeout(() => {
       // Force-close remaining clients
       for (const client of this.clients) {
@@ -410,8 +401,9 @@ export class Holder {
         // Clean up files
         removeSession(this.name);
         this.shuttingDown = false;
+        this.resolveShutdown();
       });
-    }, 5000);
+    }, lingerMs);
   }
 
   /**
