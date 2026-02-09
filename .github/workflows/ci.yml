@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['20', '22']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm run build
+
+      - name: Unit + integration tests
+        run: npx vitest run src/platform.test.ts src/ring-buffer.test.ts src/protocol.test.ts src/integration.test.ts --reporter=verbose
+
+      - name: E2E tests
+        run: npx vitest run src/e2e.test.ts --reporter=verbose
+        timeout-minutes: 10
+        env:
+          HOLDPTY_LINGER_MS: '200'
+
+      - name: Kill orphan holders
+        if: always()
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            taskkill //F //FI "IMAGENAME eq node.exe" 2>/dev/null || true
+          else
+            pkill -f "__holder" || true
+          fi

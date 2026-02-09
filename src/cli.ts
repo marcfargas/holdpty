@@ -15,7 +15,8 @@ import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-const VERSION = "0.0.0";
+// Read version from package.json at build time — keep in sync
+const VERSION = "0.1.0";
 
 // ── Argument parsing ───────────────────────────────────────────────
 
