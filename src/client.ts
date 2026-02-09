@@ -96,13 +96,11 @@ export function connect(opts: ConnectOptions): Promise<ClientConnection> {
           }
 
           case MSG.DATA_OUT:
-            // During handshake (replay) and live streaming
-            if (ack && !resolved) {
-              // We have the ack — resolve after we start receiving data
-              // But we resolve on REPLAY_END, not here
-            }
-            // Emit data to stdout for view/logs
-            if (resolved || mode === "logs") {
+            // Write data to stdout for view and logs modes.
+            // For view: write both replay (before REPLAY_END) and live data.
+            // For logs: write replay data (holder disconnects after REPLAY_END).
+            // For attach: don't write here — attach sets up its own handler after connect().
+            if (mode === "view" || mode === "logs") {
               process.stdout.write(frame.payload);
             }
             break;
@@ -310,30 +308,12 @@ export interface ViewOptions {
 /**
  * View a session (read-only live stream).
  * Writes PTY data to stdout. Returns when the session ends.
+ *
+ * Data output (both replay and live) is handled by connect()'s data listener.
  */
 export async function view(opts: ViewOptions): Promise<void> {
   const conn = await connect({ name: opts.name, mode: "view" });
-  const { socket, done } = conn;
-
-  // Replay data was already written to stdout during connect
-  // Now stream live data
-
-  const decoder = new FrameDecoder();
-  socket.on("data", (chunk: Buffer) => {
-    let frames: Frame[];
-    try {
-      frames = decoder.decode(chunk);
-    } catch {
-      return;
-    }
-    for (const frame of frames) {
-      if (frame.type === MSG.DATA_OUT) {
-        process.stdout.write(frame.payload);
-      }
-    }
-  });
-
-  await done;
+  await conn.done;
 }
 
 // ── Logs ───────────────────────────────────────────────────────────
