@@ -106,11 +106,11 @@ export class Holder {
     const rows = opts.rows ?? 40;
 
     // Spawn PTY
-    // On Windows, node-pty doesn't search PATH like cmd.exe does.
-    // resolveCommand() finds the .exe so `node` works, not just `node.exe`.
-    const shell = resolveCommand(opts.command[0]);
-    const args = opts.command.slice(1);
-    const ptyProcess = pty.spawn(shell, args, {
+    // On Windows, node-pty can't search PATH, resolve PATHEXT, or run
+    // .cmd/.bat files. resolveCommand() finds the real file and wraps
+    // .cmd/.bat with cmd.exe /c as needed.
+    const resolved = resolveCommand(opts.command);
+    const ptyProcess = pty.spawn(resolved.shell, resolved.args, {
       name: "xterm-256color",
       cols,
       rows,
