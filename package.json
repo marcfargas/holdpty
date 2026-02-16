@@ -61,6 +61,7 @@
     "dist/session.js.map",
     "dist/session.d.ts",
     "skills/",
+    ".well-known/",
     "LICENSE",
     "LICENSE-CC0",
     "README.md"

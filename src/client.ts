@@ -80,7 +80,7 @@ export function connect(opts: ConnectOptions): Promise<ClientConnection> {
       resolveDone = r;
     });
 
-    socket.on("data", (chunk: Buffer) => {
+    const onData = (chunk: Buffer): void => {
       let frames: Frame[];
       try {
         frames = decoder.decode(chunk);
@@ -108,14 +108,11 @@ export function connect(opts: ConnectOptions): Promise<ClientConnection> {
           }
 
           case MSG.DATA_OUT:
-            // For attach: don't write here — attach sets up its own handler after connect().
-            if (mode === "view" || mode === "logs") {
-              if (!replayDone && opts.onReplayData) {
-                // During replay with a custom handler — delegate to caller
-                opts.onReplayData(frame.payload);
-              } else {
-                process.stdout.write(frame.payload);
-              }
+            if (!replayDone && opts.onReplayData) {
+              // During replay with a custom handler — delegate to caller
+              opts.onReplayData(frame.payload);
+            } else {
+              process.stdout.write(frame.payload);
             }
             break;
 
@@ -128,6 +125,11 @@ export function connect(opts: ConnectOptions): Promise<ClientConnection> {
             }
             if (!resolved && ack) {
               resolved = true;
+              // For attach mode: remove this handler so attach() can install
+              // its own without double-writing. view/logs keep this handler.
+              if (mode === "attach") {
+                socket.removeListener("data", onData);
+              }
               resolve({ socket, ack, done });
             }
             break;
@@ -143,7 +145,9 @@ export function connect(opts: ConnectOptions): Promise<ClientConnection> {
             break;
         }
       }
-    });
+    };
+
+    socket.on("data", onData);
 
     socket.on("error", (err: Error) => {
       if (!resolved) {

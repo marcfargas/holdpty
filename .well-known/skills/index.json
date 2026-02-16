@@ -1,0 +1,9 @@
+{
+  "skills": [
+    {
+      "name": "holdpty",
+      "path": "skills/holdpty/SKILL.md",
+      "description": "Detached PTY sessions — launch commands in a real pseudo-terminal, attach/view/record later. Use when: launching agents or processes that need a real TTY but should run detached, supervising running agents, recording terminal sessions, viewing agent output. Triggers: detached terminal, background agent, attach to session, view terminal, record session, holdpty."
+    }
+  ]
+}
