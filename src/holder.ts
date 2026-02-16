@@ -164,6 +164,70 @@ export class Holder {
     return this.childExitCode ?? -1;
   }
 
+  /**
+   * Bridge stdin/stdout directly to the PTY (for --fg mode).
+   *
+   * This is a lightweight alternative to socket-based attach for cases
+   * where the holder runs in the same process. If stdin is a TTY, raw
+   * mode is enabled and resize events are forwarded.
+   *
+   * Returns the child's exit code when the child process exits.
+   */
+  async pipeStdio(): Promise<number> {
+    // Wire PTY output → stdout (in addition to the ring buffer + broadcast
+    // that setupPty already handles)
+    this.ptyProcess.onData((data: string) => {
+      process.stdout.write(data, "binary");
+    });
+
+    // Wire stdin → PTY input
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    process.stdin.resume();
+
+    const onStdinData = (data: Buffer): void => {
+      try {
+        this.ptyProcess.write(data.toString("binary"));
+      } catch {
+        // PTY may have closed
+      }
+    };
+    process.stdin.on("data", onStdinData);
+
+    // Forward terminal resize events
+    const onResize = (): void => {
+      if (process.stdout.columns && process.stdout.rows) {
+        try {
+          this.ptyProcess.resize(process.stdout.columns, process.stdout.rows);
+        } catch {
+          // PTY may have closed
+        }
+      }
+    };
+    if (process.stdin.isTTY) {
+      process.stdout.on("resize", onResize);
+      // Send initial size
+      onResize();
+    }
+
+    const code = await this.waitForExit();
+
+    // Cleanup
+    process.stdin.removeListener("data", onStdinData);
+    process.stdout.removeListener("resize", onResize);
+    try {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.pause();
+    } catch {
+      // Already closed
+    }
+
+    return code;
+  }
+
   // ── PTY wiring ─────────────────────────────────────────────────
 
   private setupPty(): void {
