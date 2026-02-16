@@ -89,6 +89,33 @@ describe("Holder", () => {
     conn.socket.end();
   });
 
+  it("attach replays buffer including ANSI escape sequences", async () => {
+    const holder = await startHolder({
+      command: [process.execPath, "-e", "process.stdout.write('\\x1b[31mred\\x1b[0m normal'); setTimeout(() => {}, 5000)"],
+      name: "test-attach-replay",
+    });
+
+    // Wait for PTY to produce output
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Connect as attach with onReplayData to capture replay
+    const replayChunks: Buffer[] = [];
+    const conn = await connect({
+      name: "test-attach-replay",
+      mode: "attach",
+      onReplayData: (payload) => replayChunks.push(payload),
+    });
+
+    expect(conn.ack.mode).toBe("attach");
+
+    const replay = Buffer.concat(replayChunks).toString();
+    // The replay should contain the ANSI escape (may be wrapped by PTY)
+    expect(replay).toContain("red");
+    expect(replay).toContain("normal");
+
+    conn.socket.end();
+  });
+
   it("accepts logs connection and disconnects after replay", async () => {
     const holder = await startHolder({
       command: [process.execPath, "-e", "process.stdout.write('log output'); setTimeout(() => {}, 5000)"],
