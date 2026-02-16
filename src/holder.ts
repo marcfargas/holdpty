@@ -106,11 +106,11 @@ export class Holder {
     const rows = opts.rows ?? 40;
 
     // Spawn PTY
-    // On Windows, node-pty doesn't search PATH like cmd.exe does.
-    // resolveCommand() finds the .exe so `node` works, not just `node.exe`.
-    const shell = resolveCommand(opts.command[0]);
-    const args = opts.command.slice(1);
-    const ptyProcess = pty.spawn(shell, args, {
+    // On Windows, node-pty can't search PATH, resolve PATHEXT, or run
+    // .cmd/.bat files. resolveCommand() finds the real file and wraps
+    // .cmd/.bat with cmd.exe /c as needed.
+    const resolved = resolveCommand(opts.command);
+    const ptyProcess = pty.spawn(resolved.shell, resolved.args, {
       name: "xterm-256color",
       cols,
       rows,
@@ -177,7 +177,7 @@ export class Holder {
     // Wire PTY output → stdout (in addition to the ring buffer + broadcast
     // that setupPty already handles)
     this.ptyProcess.onData((data: string) => {
-      process.stdout.write(data, "binary");
+      process.stdout.write(data);
     });
 
     // Wire stdin → PTY input
@@ -188,7 +188,7 @@ export class Holder {
 
     const onStdinData = (data: Buffer): void => {
       try {
-        this.ptyProcess.write(data.toString("binary"));
+        this.ptyProcess.write(data.toString("utf-8"));
       } catch {
         // PTY may have closed
       }
@@ -232,7 +232,7 @@ export class Holder {
 
   private setupPty(): void {
     this.ptyProcess.onData((data: string) => {
-      const buf = Buffer.from(data, "binary");
+      const buf = Buffer.from(data, "utf-8");
       this.ringBuffer.write(buf);
       this.broadcast(encodeDataOut(buf));
     });
@@ -376,7 +376,7 @@ export class Holder {
       case MSG.DATA_IN:
         if (client.mode === "attach") {
           try {
-            this.ptyProcess.write(frame.payload.toString("binary"));
+            this.ptyProcess.write(frame.payload.toString("utf-8"));
           } catch {
             // PTY may have closed
           }

@@ -95,41 +95,59 @@ export function defaultShell(): string {
 export const isWindows = IS_WINDOWS;
 
 /**
- * Resolve a command name to a full path on Windows.
+ * Resolved command for pty.spawn() on Windows.
  *
- * node-pty on Windows doesn't search PATH the way cmd.exe does.
- * `pty.spawn("node", ...)` fails — needs `pty.spawn("node.exe", ...)` or
- * a full path. This function tries PATHEXT extensions and PATH directories.
+ * node-pty on Windows can't search PATH, resolve PATHEXT, or run
+ * .cmd/.bat files. This function finds the actual file and returns
+ * the shell + args needed to execute it.
  *
- * On non-Windows, returns the command unchanged (forkpty handles it).
+ * Returns { shell, args } where shell is what to pass to pty.spawn()
+ * and args replaces the original args array.
+ *
+ * On non-Windows, returns the command unchanged.
  */
-export function resolveCommand(command: string): string {
-  if (!IS_WINDOWS) return command;
+export function resolveCommand(command: string[]): { shell: string; args: string[] } {
+  if (!IS_WINDOWS) return { shell: command[0], args: command.slice(1) };
 
-  // Already has an extension or is an absolute path that exists
-  if (extname(command) !== "") return command;
+  const cmd = command[0];
+  const rest = command.slice(1);
 
-  // PATHEXT extensions to try (e.g. .exe, .cmd, .bat)
-  // We only want real executables, not .cmd/.bat (node-pty can't run those)
-  const exeExtensions = [".exe", ".com"];
-
-  // Check if it's a relative/absolute path (contains separator)
-  if (command.includes("/") || command.includes("\\")) {
-    for (const ext of exeExtensions) {
-      if (existsSync(command + ext)) return command + ext;
-    }
-    return command;
+  // Already has an extension — check what kind
+  const ext = extname(cmd).toLowerCase();
+  if (ext === ".cmd" || ext === ".bat") {
+    return { shell: "cmd.exe", args: ["/c", ...command] };
+  }
+  if (ext !== "") {
+    // .exe, .com, or other — pass through
+    return { shell: cmd, args: rest };
   }
 
-  // Search PATH
-  const pathDirs = (process.env["PATH"] ?? "").split(";").filter(Boolean);
-  for (const dir of pathDirs) {
-    for (const ext of exeExtensions) {
-      const candidate = join(dir, command + ext);
-      if (existsSync(candidate)) return candidate;
+  // No extension — search for the actual file
+  const dirs = cmd.includes("/") || cmd.includes("\\")
+    ? [""]  // relative/absolute path — search in place
+    : (process.env["PATH"] ?? "").split(";").filter(Boolean);
+
+  // Prefer .exe/.com (native), then .cmd/.bat (needs cmd.exe wrapper)
+  const nativeExts = [".exe", ".com"];
+  const scriptExts = [".cmd", ".bat"];
+
+  for (const dir of dirs) {
+    const base = dir ? join(dir, cmd) : cmd;
+    for (const e of nativeExts) {
+      if (existsSync(base + e)) return { shell: base + e, args: rest };
+    }
+    // Also check extensionless file (e.g., npm shims on Windows that are shell scripts)
+    if (existsSync(base) && !existsSync(base + ".exe")) {
+      // Could be a shell script or extensionless binary — try it directly
+      for (const e of scriptExts) {
+        if (existsSync(base + e)) return { shell: "cmd.exe", args: ["/c", ...command] };
+      }
+    }
+    for (const e of scriptExts) {
+      if (existsSync(base + e)) return { shell: "cmd.exe", args: ["/c", ...command] };
     }
   }
 
-  // Fallback: try just appending .exe (let node-pty give the error)
-  return command + ".exe";
+  // Fallback: try as-is with .exe
+  return { shell: cmd + ".exe", args: rest };
 }
