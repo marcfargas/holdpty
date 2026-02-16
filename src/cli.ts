@@ -120,7 +120,12 @@ async function cmdLaunch(args: string[]): Promise<void> {
     process.stdout.write(sessionName + "\n");
   } else {
     // Foreground: run holder in this process, bridge stdin/stdout to PTY
-    const holder = await Holder.start({ command, name });
+    const holder = await Holder.start({
+      command,
+      name,
+      cols: process.stdout.columns || undefined,
+      rows: process.stdout.rows || undefined,
+    });
     process.stdout.write(holder.sessionName + "\n");
     const code = await holder.pipeStdio();
     process.exit(code);
