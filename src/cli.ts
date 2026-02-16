@@ -119,10 +119,10 @@ async function cmdLaunch(args: string[]): Promise<void> {
 
     process.stdout.write(sessionName + "\n");
   } else {
-    // Foreground: run holder in this process
+    // Foreground: run holder in this process, bridge stdin/stdout to PTY
     const holder = await Holder.start({ command, name });
     process.stdout.write(holder.sessionName + "\n");
-    const code = await holder.waitForExit();
+    const code = await holder.pipeStdio();
     process.exit(code);
   }
 }

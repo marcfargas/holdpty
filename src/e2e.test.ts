@@ -311,13 +311,16 @@ describe("launch --fg", () => {
     expect(r.exitCode).toBe(42);
   }, 25_000);
 
-  it("prints session name to stdout", async () => {
+  it("prints session name as first line of stdout", async () => {
     const r = await runCli(
       ["launch", "--fg", "--name", "fg-name", "--", NODE, "-e", "process.exit(0)"],
       testDir,
       { timeout: 20_000 },
     );
-    expect(r.stdout.trim()).toBe("fg-name");
+    // PTY may emit terminal init sequences after the session name,
+    // so check the first line only (ConPTY emits [?9001h etc.)
+    const firstLine = r.stdout.split("\n")[0].trim();
+    expect(firstLine).toBe("fg-name");
   }, 25_000);
 });
 
