@@ -20,6 +20,8 @@ One thing, done well, composable with other tools.
 
 holdpty is a spiritual successor to [dtach](https://github.com/crigler/dtach) (Ned T. Crigler) and [abduco](https://github.com/martanne/abduco) (Marc André Tanner) — minimal detach/attach tools for Unix. holdpty brings the same concept to the **Node.js ecosystem with first-class Windows support** via ConPTY.
 
+Also worth noting: [alden](https://ansuz.sooke.bc.ca/entry/389) (mskala, 2025) takes a different approach — it uses named pipes instead of a PTY layer to relay the raw character stream, which preserves the outer terminal's native scrollback. The tradeoff is Linux-only and no output replay buffer.
+
 ## Install
 
 ```bash
