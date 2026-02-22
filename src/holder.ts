@@ -51,7 +51,7 @@ export interface HolderOptions {
 interface ClientConnection {
   socket: Socket;
   decoder: FrameDecoder;
-  mode: "attach" | "view" | "logs" | null; // null = pre-handshake
+  mode: "attach" | "view" | "logs" | "wait" | null; // null = pre-handshake
 }
 
 // ── Holder ─────────────────────────────────────────────────────────
@@ -348,10 +348,12 @@ export class Holder {
       });
       client.socket.write(ack);
 
-      // Replay buffer
-      const bufData = this.ringBuffer.read();
-      if (bufData.length > 0) {
-        client.socket.write(encodeDataOut(bufData));
+      // Replay buffer (skip for wait mode — wait clients only care about exit)
+      if (hello.mode !== "wait") {
+        const bufData = this.ringBuffer.read();
+        if (bufData.length > 0) {
+          client.socket.write(encodeDataOut(bufData));
+        }
       }
 
       // Send REPLAY_END
@@ -362,7 +364,7 @@ export class Holder {
         client.socket.end();
       }
 
-      // If child already exited, send EXIT
+      // If child already exited, send EXIT (applies to attach, view, and wait)
       if (this.childExited && hello.mode !== "logs") {
         client.socket.write(encodeExit(this.childExitCode ?? -1));
         client.socket.end();
@@ -443,7 +445,7 @@ export class Holder {
     // Notify all connected clients
     const exitFrame = encodeExit(this.childExitCode ?? -1);
     for (const client of this.clients) {
-      if (client.mode === "attach" || client.mode === "view") {
+      if (client.mode === "attach" || client.mode === "view" || client.mode === "wait") {
         try {
           client.socket.write(exitFrame);
           client.socket.end();

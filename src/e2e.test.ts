@@ -392,3 +392,138 @@ describe("view", () => {
     expect(viewOutput).toContain(marker2);
   }, 20_000);
 });
+
+// ── wait ───────────────────────────────────────────────────────────
+
+describe("wait", () => {
+  it("launch --wait returns child exit code 0", async () => {
+    const r = await runCli(
+      ["launch", "--wait", "--name", "wait-ok", "--", NODE, "-e", "process.exit(0)"],
+      testDir,
+      { timeout: 20_000 },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("wait-ok");
+  }, 25_000);
+
+  it("launch --wait returns non-zero child exit code", async () => {
+    const r = await runCli(
+      ["launch", "--wait", "--name", "wait-fail", "--", NODE, "-e", "process.exit(42)"],
+      testDir,
+      { timeout: 20_000 },
+    );
+    expect(r.exitCode).toBe(42);
+    expect(r.stdout).toContain("wait-fail");
+  }, 25_000);
+
+  it("launch --wait session is visible via ls while running", async () => {
+    // Spawn --wait process in background (don't await)
+    const waitChild = spawn(NODE, [CLI_PATH, "launch", "--wait", "--name", "wait-ls", "--", NODE, "-e", "setTimeout(()=>{},30000)"], {
+      env: { ...process.env, HOLDPTY_DIR: testDir, HOLDPTY_LINGER_MS: "200" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let waitStdout = "";
+    let waitStderr = "";
+    waitChild.stdout!.on("data", (d: Buffer) => { waitStdout += d.toString(); });
+    waitChild.stderr!.on("data", (d: Buffer) => { waitStderr += d.toString(); });
+
+    // Poll ls --json until session appears
+    await waitUntil(async () => {
+      const ls = await runCli(["ls", "--json"], testDir);
+      try {
+        const sessions = JSON.parse(ls.stdout);
+        return sessions.some((s: { name: string }) => s.name === "wait-ls");
+      } catch {
+        return false;
+      }
+    }, 10_000);
+
+    // Confirm it's listed
+    const ls = await runCli(["ls", "--json"], testDir);
+    const sessions = JSON.parse(ls.stdout);
+    expect(sessions.some((s: { name: string }) => s.name === "wait-ls")).toBe(true);
+
+    // Stop the session
+    await runCli(["stop", "wait-ls"], testDir);
+
+    // Wait process should exit after stop
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => { waitChild.kill("SIGKILL"); resolve(); }, 5000);
+      waitChild.on("close", () => { clearTimeout(timer); resolve(); });
+    });
+
+    waitChild.kill("SIGKILL");
+  }, 30_000);
+
+  it("launch --wait session can be viewed while waiting", async () => {
+    const marker = randomMarker();
+
+    // Spawn --wait process in background
+    const waitChild = spawn(NODE, [CLI_PATH, "launch", "--wait", "--name", "wait-view", "--", NODE, "-e", `process.stdout.write("${marker}"); setTimeout(()=>{},30000)`], {
+      env: { ...process.env, HOLDPTY_DIR: testDir, HOLDPTY_LINGER_MS: "200" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    waitChild.stdout!.on("data", () => {});
+    waitChild.stderr!.on("data", () => {});
+
+    // Wait for marker to appear in logs
+    await waitForOutput(testDir, "wait-view", marker);
+
+    // Stop the session
+    await runCli(["stop", "wait-view"], testDir);
+
+    // Wait process should exit after stop
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => { waitChild.kill("SIGKILL"); resolve(); }, 5000);
+      waitChild.on("close", () => { clearTimeout(timer); resolve(); });
+    });
+
+    waitChild.kill("SIGKILL");
+  }, 30_000);
+
+  it("holdpty wait <session> returns child exit code", async () => {
+    // Launch a bg session that exits with code 7 after 1s
+    const sessionName = await launchBg(
+      testDir,
+      [NODE, "-e", "setTimeout(()=>process.exit(7), 1000)"],
+      "wait-exit",
+    );
+
+    // wait for the session to exit
+    const r = await runCli(["wait", sessionName], testDir, { timeout: 15_000 });
+    expect(r.exitCode).toBe(7);
+  }, 20_000);
+
+  it("holdpty wait <session> on nonexistent session fails", async () => {
+    const r = await runCli(["wait", "ghost"], testDir);
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toContain("not found");
+  });
+
+  it("--wait with --fg is an error", async () => {
+    const r = await runCli(
+      ["launch", "--fg", "--wait", "--", NODE, "-e", "process.exit(0)"],
+      testDir,
+    );
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toMatch(/--fg.*--wait|--wait.*--fg/);
+  });
+
+  it("--wait without --fg/--bg works (implies --bg)", async () => {
+    const r = await runCli(
+      ["launch", "--wait", "--name", "wait-only", "--", NODE, "-e", "process.exit(5)"],
+      testDir,
+      { timeout: 20_000 },
+    );
+    expect(r.exitCode).toBe(5);
+  }, 25_000);
+
+  it("--bg --wait works (explicit combo)", async () => {
+    const r = await runCli(
+      ["launch", "--bg", "--wait", "--name", "bg-wait", "--", NODE, "-e", "process.exit(3)"],
+      testDir,
+      { timeout: 20_000 },
+    );
+    expect(r.exitCode).toBe(3);
+  }, 25_000);
+});

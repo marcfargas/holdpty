@@ -220,6 +220,48 @@ describe("listSessions", () => {
   });
 });
 
+describe("wait mode", () => {
+  it("connects, skips replay, receives EXIT with correct code", async () => {
+    const holder = await startHolder({
+      command: [process.execPath, "-e", `
+        process.stdout.write("output before exit");
+        setTimeout(() => process.exit(42), 300);
+      `],
+      name: "test-wait",
+    });
+
+    // Wait for output to appear in ring buffer
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Connect with mode "wait"
+    const conn = await connect({ name: "test-wait", mode: "wait" });
+
+    // Verify ack mode
+    expect(conn.ack.mode).toBe("wait");
+
+    // Wait for done promise — should resolve with exit code 42
+    const code = await conn.done;
+    expect(code).toBe(42);
+  }, 15_000);
+
+  it("sends EXIT immediately if child already exited", async () => {
+    const holder = await startHolder({
+      command: [process.execPath, "-e", "process.exit(7)"],
+      name: "test-wait-posthoc",
+    });
+
+    // Wait for child to exit (holder lingers)
+    await new Promise((r) => setTimeout(r, 800));
+
+    // Connect with mode "wait" — child already exited, should get EXIT immediately
+    const conn = await connect({ name: "test-wait-posthoc", mode: "wait" });
+    expect(conn.ack.mode).toBe("wait");
+
+    const code = await conn.done;
+    expect(code).toBe(7);
+  }, 15_000);
+});
+
 describe("protocol handshake", () => {
   it("rejects unsupported protocol version", async () => {
     const holder = await startHolder({

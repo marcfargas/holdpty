@@ -82,7 +82,7 @@ export function encodeError(message: string): Buffer {
 }
 
 export interface HelloPayload {
-  mode: "attach" | "view" | "logs";
+  mode: "attach" | "view" | "logs" | "wait";
   protocolVersion: number;
 }
 
@@ -94,7 +94,7 @@ export interface HelloAckPayload {
   name: string;
   cols: number;
   rows: number;
-  mode: "attach" | "view" | "logs";
+  mode: "attach" | "view" | "logs" | "wait";
   pid: number;
 }
 

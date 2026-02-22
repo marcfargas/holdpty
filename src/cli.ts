@@ -7,7 +7,7 @@
  */
 
 import { Holder } from "./holder.js";
-import { attach, view, logs } from "./client.js";
+import { attach, view, logs, waitForExit } from "./client.js";
 import { listSessions, readMetadata, removeSession, isSessionActive } from "./session.js";
 import { getSessionDir } from "./platform.js";
 import { spawn } from "node:child_process";
@@ -24,10 +24,11 @@ function usage(): string {
   return `holdpty v${VERSION} — Minimal cross-platform detached PTY
 
 Usage:
-  holdpty launch --bg|--fg [--name <name>] [--] <command> [args...]
+  holdpty launch --bg|--fg|--wait [--name <name>] [--] <command> [args...]
   holdpty attach <session>
   holdpty view <session>
   holdpty logs <session> [--tail N] [--follow] [--no-replay]
+  holdpty wait <session>
   holdpty ls [--json]
   holdpty stop <session>
   holdpty info <session>
@@ -44,6 +45,7 @@ function die(msg: string): never {
 async function cmdLaunch(args: string[]): Promise<void> {
   let fg = false;
   let bg = false;
+  let wait = false;
   let name: string | undefined;
   let cmdStart = -1;
 
@@ -53,6 +55,8 @@ async function cmdLaunch(args: string[]): Promise<void> {
       fg = true;
     } else if (arg === "--bg") {
       bg = true;
+    } else if (arg === "--wait") {
+      wait = true;
     } else if (arg === "--name" && i + 1 < args.length) {
       name = args[++i];
     } else if (arg === "--") {
@@ -69,14 +73,15 @@ async function cmdLaunch(args: string[]): Promise<void> {
     }
   }
 
-  if (!fg && !bg) die("launch requires --fg or --bg");
+  if (fg && wait) die("--wait cannot be used with --fg (--fg already waits for exit)");
+  if (!fg && !bg && !wait) die("launch requires --fg or --bg");
   if (fg && bg) die("launch cannot use both --fg and --bg");
   if (cmdStart < 0 || cmdStart >= args.length) die("launch requires a command after the flags");
 
   const command = args.slice(cmdStart);
   if (command.length === 0) die("launch requires a command");
 
-  if (bg) {
+  if (bg || wait) {
     // Spawn the holder as a detached child process.
     // Use a ready-file to signal that the holder has started.
     const thisFile = fileURLToPath(import.meta.url);
@@ -118,6 +123,11 @@ async function cmdLaunch(args: string[]): Promise<void> {
     }
 
     process.stdout.write(sessionName + "\n");
+
+    // --wait: stay alive until the child process exits, then forward exit code
+    if (wait) {
+      await waitAndExit(sessionName);
+    }
   } else {
     // Foreground: run holder in this process, bridge stdin/stdout to PTY
     const holder = await Holder.start({
@@ -163,6 +173,33 @@ async function cmdHolder(args: string[]): Promise<void> {
 
   // Keep running until child exits
   await holder.waitForExit();
+}
+
+/**
+ * Forward signals to the session's child process and wait for it to exit.
+ * Exits the current process with the child's exit code.
+ *
+ * Used by `launch --wait` and `holdpty wait <session>`.
+ */
+async function waitAndExit(name: string): Promise<never> {
+  // Forward SIGTERM/SIGINT to the session's child process
+  const meta = readMetadata(name);
+  if (meta) {
+    const forward = (signal: NodeJS.Signals): void => {
+      try { process.kill(meta.childPid, signal); } catch { /* child may be dead */ }
+    };
+    process.on("SIGTERM", () => forward("SIGTERM"));
+    process.on("SIGINT", () => forward("SIGINT"));
+  }
+
+  const code = await waitForExit({ name });
+  process.exit(code);
+}
+
+async function cmdWait(args: string[]): Promise<void> {
+  const name = args[0];
+  if (!name) die("wait requires a session name");
+  await waitAndExit(name);
 }
 
 async function cmdAttach(args: string[]): Promise<void> {
@@ -308,6 +345,9 @@ async function main(): Promise<void> {
       break;
     case "__holder":
       await cmdHolder(rest);
+      break;
+    case "wait":
+      await cmdWait(rest);
       break;
     case "attach":
       await cmdAttach(rest);

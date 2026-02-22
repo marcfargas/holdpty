@@ -32,7 +32,7 @@ All multi-byte integers are big-endian.
 2. Client sends `HELLO`:
    ```json
    {
-     "mode": "attach" | "view" | "logs",
+     "mode": "attach" | "view" | "logs" | "wait",
      "protocolVersion": 1
    }
    ```
@@ -45,14 +45,15 @@ All multi-byte integers are big-endian.
      "name": "worker1",
      "cols": 120,
      "rows": 40,
-     "mode": "attach" | "view" | "logs",
+     "mode": "attach" | "view" | "logs" | "wait",
      "pid": 12345
    }
    ```
-5. Holder replays ring buffer as `DATA_OUT` frames
+5. Holder replays ring buffer as `DATA_OUT` frames (skipped for `wait` mode)
 6. Holder sends `REPLAY_END`
 7. For `logs` mode: holder closes connection after `REPLAY_END`
 8. For `attach`/`view`: bidirectional streaming begins
+9. For `wait`: holder keeps connection open until child exits, then sends `EXIT`
 
 ## Data Flow
 
@@ -88,6 +89,22 @@ Client                          Holder
   │◄─── REPLAY_END ──────────────│
   │         [connection closes]    │
 ```
+
+### wait mode (exit code only)
+```
+Client                          Holder
+  │                               │
+  │──── HELLO {mode:"wait"} ─────►│
+  │◄─── HELLO_ACK ───────────────│
+  │◄─── REPLAY_END ──────────────│  (no buffer replay)
+  │                               │
+  │         [waiting...]           │
+  │                               │
+  │◄─── EXIT {code: 0} ──────────│  (child exited)
+  │         [connection closes]    │
+```
+
+Use `wait` mode when you need the child's exit code without consuming PTY output. No `DATA_OUT` frames are sent to wait clients. If the child has already exited when the client connects, `EXIT` is sent immediately after `REPLAY_END`.
 
 ## Error Handling
 

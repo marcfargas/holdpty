@@ -83,6 +83,7 @@ Short paths to stay under Windows 108-char UDS limit:
 - **attach**: Single-writer. Bidirectional (stdin forwarded to PTY, PTY output to client). Resize events propagated. Only one attach at a time — subsequent attempts get a clear error.
 - **view**: Read-only. Multiple simultaneous viewers. Receives buffer replay + live stream. Does not affect the PTY (no resize, no input). Sees real terminal output including escape sequences.
 - **logs**: Connect, receive buffer replay, disconnect after REPLAY_END. No live tailing.
+- **wait**: Exit-code-only. No buffer replay, no DATA_OUT frames. Holder keeps connection open until child exits, then sends EXIT. Useful for Docker entrypoints and CI: `holdpty launch --wait -- node server.js` stays alive as PID 1 and exits with the server's exit code.
 
 ### Ring Buffer
 
@@ -103,10 +104,11 @@ Short paths to stay under Windows 108-char UDS limit:
 
 ### Foreground vs Background
 
-`holdpty launch` requires `--fg` or `--bg` explicitly:
+`holdpty launch` requires `--fg`, `--bg`, or `--wait` explicitly:
 
 - **`--fg`**: The holder process IS the foreground process. Blocks until child exits. Returns child's exit code.
 - **`--bg`**: Spawns the holder as a detached child process (`child_process.spawn({detached: true, stdio: 'ignore'})` + `unref()`). Prints session name to stdout and returns immediately.
+- **`--wait`**: Spawns the holder detached (like `--bg`) but keeps the CLI process alive. Prints session name to stdout, then blocks until the inner process exits, returning its exit code. Primary use case: Docker entrypoints where PID 1 must stay alive.
 
 The tool never daemonizes itself. `--bg` is a convenience for Windows (where `&` doesn't work in cmd.exe). On Linux, callers can use `--fg &` or nohup or pm2 as they prefer.
 
@@ -139,9 +141,11 @@ This runs automatically. No manual `clean` command needed (though one could be a
 |---------|---------|
 | `launch --bg` | 0 on successful launch |
 | `launch --fg` | Child's exit code |
+| `launch --wait` | Child's exit code |
 | `attach` | Child's exit code if child exits while attached; 0 on user detach |
 | `view` | 0 |
 | `logs` | 0 |
+| `wait` | Child's exit code |
 | `stop` | 0 if signal sent successfully |
 | `ls` | 0 |
 
@@ -202,10 +206,11 @@ Forcing the choice costs one flag and eliminates an entire class of bugs.
 ## Phases
 
 ### Phase 1 (MVP)
-- `launch` (--fg, --bg, --name)
+- `launch` (--fg, --bg, --wait, --name)
 - `attach` (single-writer, detach keybinding)
 - `view` (read-only, multiple simultaneous)
 - `logs` (dump buffer, exit)
+- `wait` (block until exit, return child's exit code)
 - `ls` (with stale detection + auto-cleanup, --json)
 - `stop` (SIGTERM)
 - Binary protocol (8 message types)
@@ -216,7 +221,6 @@ Forcing the choice costs one flag and eliminates an entire class of bugs.
 ### Phase 2
 - `info` command (detailed metadata)
 - `send` command (inject input without attaching)
-- `wait` command (block until exit, return code)
 - Resize propagation on attach
 - `--size COLSxROWS` override
 - `--signal` for stop

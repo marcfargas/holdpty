@@ -23,7 +23,7 @@ import { TailBuffer } from "./line-filter.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
-export type ClientMode = "attach" | "view" | "logs";
+export type ClientMode = "attach" | "view" | "logs" | "wait";
 
 export interface ConnectOptions {
   name: string;
@@ -108,6 +108,7 @@ export function connect(opts: ConnectOptions): Promise<ClientConnection> {
           }
 
           case MSG.DATA_OUT:
+            if (mode === "wait") break; // wait mode: suppress all output
             if (!replayDone && opts.onReplayData) {
               // During replay with a custom handler — delegate to caller
               opts.onReplayData(frame.payload);
@@ -410,4 +411,23 @@ export async function logs(opts: LogsOptions): Promise<void> {
     await conn.done;
   }
   // Without --follow in logs mode, holder disconnects after REPLAY_END
+}
+
+// ── Wait ───────────────────────────────────────────────────────────
+
+export interface WaitOptions {
+  name: string;
+}
+
+/**
+ * Connect to an existing session, wait for the inner process to exit,
+ * and return its exit code. No PTY output is written to stdout.
+ *
+ * This is the network-level primitive used by both `holdpty wait <session>`
+ * and the `--wait` flag on `holdpty launch`.
+ */
+export async function waitForExit(opts: WaitOptions): Promise<number> {
+  const conn = await connect({ name: opts.name, mode: "wait" });
+  const code = await conn.done;
+  return code ?? -1;
 }
