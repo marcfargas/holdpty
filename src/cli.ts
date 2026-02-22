@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 // Read version from package.json at build time — keep in sync
-const VERSION = "0.1.0";
+const VERSION = "0.3.0";
 
 // ── Argument parsing ───────────────────────────────────────────────
 

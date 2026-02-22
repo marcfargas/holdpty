@@ -1,5 +1,16 @@
 # holdpty
 
+## 0.3.0
+
+### Minor Changes
+
+- [`68b0cb3`](https://github.com/marcfargas/holdpty/commit/68b0cb34ccd746cbbab27d20fdf643413e52fcad) Thanks [@marcfargas](https://github.com/marcfargas)! - Add `--wait` flag and `holdpty wait` command for Docker entrypoint use case.
+
+  - `holdpty launch --wait -- cmd`: launch a detached PTY session and wait for the inner process to exit, returning its exit code. PID 1 stays alive while clients can attach/view the session.
+  - `holdpty wait <session>`: wait for an existing session's inner process to exit and return its exit code.
+  - Signal forwarding: SIGTERM/SIGINT received by the wait process are forwarded to the child process for graceful shutdown.
+  - New `wait` protocol mode: skips buffer replay and DATA_OUT broadcast for efficient exit-code-only connections.
+
 ## 0.2.1
 
 ### Patch Changes
