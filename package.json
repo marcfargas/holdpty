@@ -1,6 +1,6 @@
 {
   "name": "holdpty",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Minimal cross-platform detached PTY. Launch commands in a pseudo-terminal, attach/view/record later.",
   "type": "module",
   "license": "MIT",

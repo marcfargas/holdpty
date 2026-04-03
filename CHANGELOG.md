@@ -1,5 +1,29 @@
 # holdpty
 
+## 0.4.0
+
+### Minor Changes
+
+- [`fe99596`](https://github.com/marcfargas/holdpty/commit/fe995961d4ce08259235ac346fcb2e916956f533) - feat: add `send` command for non-exclusive input injection
+
+  New `holdpty send <session> <text>` command that writes input to a session's PTY without taking an exclusive writer lock. Unlike `attach`, multiple senders can run concurrently alongside an attached client and viewers.
+
+  Also supports `--stdin` for piping data: `echo "exit" | holdpty send worker1 --stdin`
+
+  This is useful for orchestration tools, CI/CD scripts, and multi-agent systems that need to inject commands programmatically without conflicting with interactive sessions.
+
+- [#3](https://github.com/marcfargas/holdpty/pull/3) [`afeb209`](https://github.com/marcfargas/holdpty/commit/afeb2094e2646b360b448f8058dc55965102eb82) Thanks [@ashishranjan738](https://github.com/ashishranjan738)! - Add `--cols` and `--rows` flags to `launch` command
+
+  When launching sessions with `--bg` or `--wait`, the PTY was always created with the default 120x40 size. Callers that needed a different size had to connect via socket and send a RESIZE frame after launch — a racy workaround that briefly shows the wrong size.
+
+  Now you can specify the initial PTY dimensions directly:
+
+  ```bash
+  holdpty launch --bg --cols 200 --rows 50 -- /bin/zsh
+  ```
+
+  In `--fg` mode with non-TTY stdin, explicit `--cols`/`--rows` set the initial PTY size. In interactive `--fg` sessions, the terminal's actual size takes precedence via resize propagation.
+
 ## 0.3.0
 
 ### Minor Changes
