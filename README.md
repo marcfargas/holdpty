@@ -82,6 +82,9 @@ holdpty launch --fg --name build -- make all
 # Auto-generated name if --name omitted
 holdpty launch --bg -- npm start
 # Prints: npm-a3f2
+
+# Set initial PTY dimensions (default: 120x40)
+holdpty launch --bg --cols 200 --rows 50 -- /bin/zsh
 ```
 
 The `--` separator before the command is optional. This is important for **PowerShell**, which strips `--` before it reaches the process:

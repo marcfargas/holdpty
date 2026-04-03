@@ -38,6 +38,9 @@ holdpty launch --fg --name build -- make all
 
 # Auto-generated name (format: basename-xxxx)
 SESSION=$(holdpty launch --bg -- node server.js)
+
+# Set initial PTY dimensions (default: 120x40)
+holdpty launch --bg --cols 200 --rows 50 -- /bin/zsh
 ```
 
 **`--` is optional.** PowerShell strips `--` before it reaches the process, so `holdpty launch --bg node server.js` works the same as `holdpty launch --bg -- node server.js`.
@@ -92,6 +95,18 @@ holdpty logs worker1 -f --tail 50       # last 50 lines + live stream (tail -f)
 holdpty logs worker1 -f --no-replay     # live output only, skip history
 ```
 
+### Send (non-exclusive input injection)
+
+```bash
+# Send text to a session without attaching (like tmux send-keys)
+holdpty send worker1 "npm test"
+
+# Pipe from stdin
+echo "exit" | holdpty send worker1 --stdin
+```
+
+Multiple senders can run concurrently — no exclusive lock. Works alongside attached clients and viewers. No ordering guarantee between concurrent senders.
+
 ### Stop a session
 
 ```bash
@@ -112,6 +127,7 @@ This matters for scripting and agent use:
 
 | Command | stdout | stderr |
 |---------|--------|--------|
+| `send` | Nothing | Errors only |
 | `launch --bg` | Session name only | Nothing |
 | `launch --fg` | Session name | Nothing |
 | `view` | PTY data only | Status messages |
@@ -131,6 +147,7 @@ This matters for scripting and agent use:
 | `attach` | Child's exit code (if child exits) or 0 (on detach) |
 | `logs` | 0 |
 | `view` | 0 |
+| `send` | 0 if sent; 1 if session not found or dead |
 | `stop` | 0 |
 | Any error | 1 |
 
